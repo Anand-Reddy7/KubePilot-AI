@@ -1,0 +1,1053 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Kubernetes AI Agent</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, Helvetica, sans-serif;
+            height: 100vh;
+            display: flex;
+            background: #f5f5f5;
+        }
+
+        /* Sidebar */
+
+        .sidebar {
+            width: 280px;
+            background: #202123;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            padding: 12px;
+        }
+
+        .sidebar-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin: 8px 4px 16px;
+        }
+
+        .new-chat-button {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #555;
+            background: transparent;
+            color: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            text-align: left;
+        }
+
+        .new-chat-button:hover {
+            background: #343541;
+        }
+
+        .history-title {
+            margin: 20px 4px 10px;
+            font-size: 12px;
+            color: #aaa;
+            text-transform: uppercase;
+        }
+
+        #chat-list {
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .chat-item {
+            padding: 10px;
+            margin-bottom: 4px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+
+        .chat-item:hover {
+            background: #343541;
+        }
+
+        .chat-item.active {
+            background: #444654;
+        }
+
+        /* Main */
+
+        .main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        .header {
+            background: white;
+            padding: 16px 20px;
+            border-bottom: 1px solid #ddd;
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        /* Messages */
+
+        #messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 25px;
+        }
+
+        .message {
+            max-width: 850px;
+            margin: 0 auto 18px;
+            padding: 14px 18px;
+            border-radius: 8px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .message.user {
+            background: #dbeafe;
+        }
+
+        .message.assistant {
+            background: white;
+            border: 1px solid #ddd;
+        }
+
+        .message.system {
+            background: #fff7ed;
+            border: 1px solid #fed7aa;
+        }
+
+        /* Approval */
+
+        .approval-box {
+            max-width: 850px;
+            margin: 0 auto 18px;
+            padding: 16px;
+            background: #fff7ed;
+            border: 1px solid #f59e0b;
+            border-radius: 8px;
+        }
+
+        .approval-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .approval-details {
+            background: white;
+            border: 1px solid #ddd;
+            padding: 10px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            margin-bottom: 12px;
+            font-family: monospace;
+        }
+
+        .approval-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .approve-button,
+        .reject-button {
+            padding: 9px 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            color: white;
+        }
+
+        .approve-button {
+            background: #16a34a;
+        }
+
+        .reject-button {
+            background: #dc2626;
+        }
+
+        /* Input */
+
+        .input-container {
+            padding: 15px 20px 20px;
+            background: white;
+            border-top: 1px solid #ddd;
+        }
+
+        .input-wrapper {
+            max-width: 850px;
+            margin: auto;
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+        }
+
+        #message-input {
+            flex: 1;
+            resize: none;
+            min-height: 52px;
+            max-height: 160px;
+            padding: 14px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 15px;
+            outline: none;
+        }
+
+        #message-input:focus {
+            border-color: #777;
+        }
+
+        #send-button {
+            height: 52px;
+            padding: 0 22px;
+            border: none;
+            border-radius: 8px;
+            background: #2563eb;
+            color: white;
+            cursor: pointer;
+            font-size: 15px;
+        }
+
+        #send-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .empty-state {
+            text-align: center;
+            margin-top: 120px;
+            color: #777;
+        }
+
+        .empty-state h2 {
+            color: #333;
+        }
+
+        .thread-id {
+            font-size: 11px;
+            color: #888;
+            font-weight: normal;
+            margin-top: 4px;
+        }
+
+        @media (max-width: 700px) {
+            .sidebar {
+                width: 210px;
+            }
+
+            #messages {
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Sidebar -->
+
+    <div class="sidebar">
+
+        <div class="sidebar-title">
+            Kubernetes Agent
+        </div>
+
+        <button
+            class="new-chat-button"
+            onclick="newChat()"
+        >
+            + New Chat
+        </button>
+
+        <div class="history-title">
+            Previous Chats
+        </div>
+
+        <div id="chat-list"></div>
+
+    </div>
+
+
+    <!-- Main -->
+
+    <div class="main">
+
+        <div class="header">
+
+            Kubernetes Operations Agent
+
+            <div
+                id="thread-display"
+                class="thread-id"
+            ></div>
+
+        </div>
+
+
+        <div id="messages">
+
+            <div
+                id="empty-state"
+                class="empty-state"
+            >
+                <h2>Kubernetes AI Agent</h2>
+
+                <p>
+                    Ask me about your Kubernetes cluster,
+                    troubleshooting or runbooks.
+                </p>
+            </div>
+
+        </div>
+
+
+        <div class="input-container">
+
+            <div class="input-wrapper">
+
+                <textarea
+                    id="message-input"
+                    placeholder="Ask about your Kubernetes cluster..."
+                ></textarea>
+
+                <button
+                    id="send-button"
+                    onclick="sendMessage()"
+                >
+                    Send
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <script>
+
+        let currentThreadId = null;
+        let waitingForResponse = false;
+
+
+        // --------------------------------------------------
+        // New Chat
+        // --------------------------------------------------
+
+        function newChat() {
+
+            currentThreadId = crypto.randomUUID();
+
+            clearMessages();
+
+            updateThreadDisplay();
+
+            setActiveThread(null);
+
+            document
+                .getElementById("message-input")
+                .focus();
+        }
+
+
+        // --------------------------------------------------
+        // Load Existing Chats
+        // --------------------------------------------------
+
+        async function loadThreads() {
+
+            try {
+
+                const response = await fetch("/threads");
+
+                if (!response.ok) {
+                    throw new Error(
+                        "Unable to load chats"
+                    );
+                }
+
+                const threads = await response.json();
+
+                const chatList =
+                    document.getElementById("chat-list");
+
+                chatList.innerHTML = "";
+
+                for (const thread of threads) {
+
+                    const item =
+                        document.createElement("div");
+
+                    item.className = "chat-item";
+
+                    item.dataset.threadId =
+                        thread.thread_id;
+
+                    item.textContent =
+                        thread.title || "Untitled Chat";
+
+                    item.title =
+                        thread.title || "Untitled Chat";
+
+                    item.onclick = () => {
+                        loadThread(thread.thread_id);
+                    };
+
+                    chatList.appendChild(item);
+                }
+
+            } catch (error) {
+
+                console.error(
+                    "Failed to load threads:",
+                    error
+                );
+            }
+        }
+
+
+        // --------------------------------------------------
+        // Load One Existing Chat
+        // --------------------------------------------------
+
+        async function loadThread(threadId) {
+
+            if (waitingForResponse) {
+                return;
+            }
+
+            try {
+
+                const response = await fetch(
+                    `/threads/${encodeURIComponent(threadId)}`
+                );
+
+                if (!response.ok) {
+                    throw new Error(
+                        "Unable to load chat"
+                    );
+                }
+
+                const data = await response.json();
+
+                currentThreadId = threadId;
+
+                clearMessages();
+
+                for (const message of data.messages) {
+
+                    addMessage(
+                        message.role,
+                        message.content
+                    );
+                }
+
+                updateThreadDisplay();
+
+                setActiveThread(threadId);
+
+                scrollToBottom();
+
+            } catch (error) {
+
+                console.error(
+                    "Failed to load thread:",
+                    error
+                );
+
+                addMessage(
+                    "system",
+                    "Unable to load this chat."
+                );
+            }
+        }
+
+
+        // --------------------------------------------------
+        // Send Message
+        // --------------------------------------------------
+
+        async function sendMessage() {
+
+            if (waitingForResponse) {
+                return;
+            }
+
+            const input =
+                document.getElementById(
+                    "message-input"
+                );
+
+            const message = input.value.trim();
+
+            if (!message) {
+                return;
+            }
+
+            if (!currentThreadId) {
+                currentThreadId =
+                    crypto.randomUUID();
+            }
+
+            input.value = "";
+
+            addMessage(
+                "user",
+                message
+            );
+
+            updateThreadDisplay();
+
+            setLoading(true);
+
+            try {
+
+                const response = await fetch(
+                    "/chat",
+                    {
+                        method: "POST",
+
+                        headers: {
+                            "Content-Type":
+                                "application/json"
+                        },
+
+                        body: JSON.stringify({
+                            message: message,
+                            thread_id: currentThreadId
+                        })
+                    }
+                );
+
+                if (!response.ok) {
+
+                    const errorText =
+                        await response.text();
+
+                    throw new Error(errorText);
+                }
+
+                const data = await response.json();
+
+                handleAgentResponse(data);
+
+                // Refresh sidebar because this may
+                // be a newly-created conversation.
+                await loadThreads();
+
+                setActiveThread(
+                    currentThreadId
+                );
+
+            } catch (error) {
+
+                console.error(
+                    "Chat request failed:",
+                    error
+                );
+
+                addMessage(
+                    "system",
+                    "Request failed. Check the FastAPI logs."
+                );
+
+            } finally {
+
+                setLoading(false);
+            }
+        }
+
+
+        // --------------------------------------------------
+        // Handle Agent Response
+        // --------------------------------------------------
+
+        function handleAgentResponse(data) {
+
+            if (
+                data.status ===
+                "approval_required"
+            ) {
+
+                showApproval(
+                    data.approval
+                );
+
+                return;
+            }
+
+            if (
+                data.status === "completed"
+            ) {
+
+                addMessage(
+                    "assistant",
+                    data.answer || ""
+                );
+
+                return;
+            }
+
+            addMessage(
+                "system",
+                "Unexpected response from agent."
+            );
+        }
+
+
+        // --------------------------------------------------
+        // HITL Approval
+        // --------------------------------------------------
+
+        function showApproval(approval) {
+
+            const messages =
+                document.getElementById(
+                    "messages"
+                );
+
+            removeEmptyState();
+
+            const box =
+                document.createElement("div");
+
+            box.className =
+                "approval-box";
+
+            const title =
+                document.createElement("div");
+
+            title.className =
+                "approval-title";
+
+            title.textContent =
+                "Human approval required";
+
+            const details =
+                document.createElement("div");
+
+            details.className =
+                "approval-details";
+
+            details.textContent =
+                "Tool: " +
+                approval.tool +
+                "\n\nArguments:\n" +
+                JSON.stringify(
+                    approval.arguments,
+                    null,
+                    2
+                );
+
+            const actions =
+                document.createElement("div");
+
+            actions.className =
+                "approval-actions";
+
+            const approve =
+                document.createElement("button");
+
+            approve.className =
+                "approve-button";
+
+            approve.textContent =
+                "Approve";
+
+            approve.onclick = () => {
+                submitApproval(
+                    "approve",
+                    box
+                );
+            };
+
+
+            const reject =
+                document.createElement("button");
+
+            reject.className =
+                "reject-button";
+
+            reject.textContent =
+                "Reject";
+
+            reject.onclick = () => {
+                submitApproval(
+                    "reject",
+                    box
+                );
+            };
+
+
+            actions.appendChild(
+                approve
+            );
+
+            actions.appendChild(
+                reject
+            );
+
+            box.appendChild(
+                title
+            );
+
+            box.appendChild(
+                details
+            );
+
+            box.appendChild(
+                actions
+            );
+
+            messages.appendChild(
+                box
+            );
+
+            scrollToBottom();
+        }
+
+
+        // --------------------------------------------------
+        // Submit HITL Decision
+        // --------------------------------------------------
+
+        async function submitApproval(
+            decision,
+            approvalBox
+        ) {
+
+            if (
+                !currentThreadId ||
+                waitingForResponse
+            ) {
+                return;
+            }
+
+            const buttons =
+                approvalBox.querySelectorAll(
+                    "button"
+                );
+
+            buttons.forEach(
+                button =>
+                    button.disabled = true
+            );
+
+            setLoading(true);
+
+            try {
+
+                const response = await fetch(
+                    "/approval",
+                    {
+                        method: "POST",
+
+                        headers: {
+                            "Content-Type":
+                                "application/json"
+                        },
+
+                        body: JSON.stringify({
+                            thread_id:
+                                currentThreadId,
+
+                            decision:
+                                decision
+                        })
+                    }
+                );
+
+                if (!response.ok) {
+
+                    const errorText =
+                        await response.text();
+
+                    throw new Error(
+                        errorText
+                    );
+                }
+
+                const data =
+                    await response.json();
+
+                approvalBox.remove();
+
+                addMessage(
+                    "system",
+                    decision === "approve"
+                        ? "Change approved."
+                        : "Change rejected."
+                );
+
+                handleAgentResponse(data);
+
+                await loadThreads();
+
+                setActiveThread(
+                    currentThreadId
+                );
+
+            } catch (error) {
+
+                console.error(
+                    "Approval request failed:",
+                    error
+                );
+
+                addMessage(
+                    "system",
+                    "Approval request failed."
+                );
+
+                buttons.forEach(
+                    button =>
+                        button.disabled = false
+                );
+
+            } finally {
+
+                setLoading(false);
+            }
+        }
+
+
+        // --------------------------------------------------
+        // Render Message
+        // --------------------------------------------------
+
+        function addMessage(
+            role,
+            content
+        ) {
+
+            removeEmptyState();
+
+            const messages =
+                document.getElementById(
+                    "messages"
+                );
+
+            const message =
+                document.createElement("div");
+
+            message.className =
+                `message ${role}`;
+
+            message.textContent =
+                content;
+
+            messages.appendChild(
+                message
+            );
+
+            scrollToBottom();
+        }
+
+
+        // --------------------------------------------------
+        // Clear Chat Window
+        // --------------------------------------------------
+
+        function clearMessages() {
+
+            const messages =
+                document.getElementById(
+                    "messages"
+                );
+
+            messages.innerHTML = `
+                <div
+                    id="empty-state"
+                    class="empty-state"
+                >
+                    <h2>Kubernetes AI Agent</h2>
+
+                    <p>
+                        Ask me about your Kubernetes cluster,
+                        troubleshooting or runbooks.
+                    </p>
+                </div>
+            `;
+        }
+
+
+        function removeEmptyState() {
+
+            const empty =
+                document.getElementById(
+                    "empty-state"
+                );
+
+            if (empty) {
+                empty.remove();
+            }
+        }
+
+
+        // --------------------------------------------------
+        // Active Sidebar Chat
+        // --------------------------------------------------
+
+        function setActiveThread(
+            threadId
+        ) {
+
+            const items =
+                document.querySelectorAll(
+                    ".chat-item"
+                );
+
+            items.forEach(item => {
+
+                item.classList.remove(
+                    "active"
+                );
+
+                if (
+                    threadId &&
+                    item.dataset.threadId ===
+                    threadId
+                ) {
+
+                    item.classList.add(
+                        "active"
+                    );
+                }
+            });
+        }
+
+
+        // --------------------------------------------------
+        // Thread Display
+        // --------------------------------------------------
+
+        function updateThreadDisplay() {
+
+            const display =
+                document.getElementById(
+                    "thread-display"
+                );
+
+            if (!currentThreadId) {
+
+                display.textContent = "";
+
+                return;
+            }
+
+            display.textContent =
+                `Thread: ${currentThreadId}`;
+        }
+
+
+        // --------------------------------------------------
+        // Loading State
+        // --------------------------------------------------
+
+        function setLoading(loading) {
+
+            waitingForResponse =
+                loading;
+
+            const button =
+                document.getElementById(
+                    "send-button"
+                );
+
+            const input =
+                document.getElementById(
+                    "message-input"
+                );
+
+            button.disabled =
+                loading;
+
+            input.disabled =
+                loading;
+
+            button.textContent =
+                loading
+                    ? "Working..."
+                    : "Send";
+        }
+
+
+        // --------------------------------------------------
+        // Scroll
+        // --------------------------------------------------
+
+        function scrollToBottom() {
+
+            const messages =
+                document.getElementById(
+                    "messages"
+                );
+
+            messages.scrollTop =
+                messages.scrollHeight;
+        }
+
+
+        // --------------------------------------------------
+        // Enter Key
+        // --------------------------------------------------
+
+        document
+            .getElementById(
+                "message-input"
+            )
+            .addEventListener(
+                "keydown",
+                function(event) {
+
+                    if (
+                        event.key === "Enter" &&
+                        !event.shiftKey
+                    ) {
+
+                        event.preventDefault();
+
+                        sendMessage();
+                    }
+                }
+            );
+
+
+        // --------------------------------------------------
+        // Application Startup
+        // --------------------------------------------------
+
+        window.addEventListener(
+            "DOMContentLoaded",
+            async () => {
+
+                await loadThreads();
+
+                // Start with an empty new chat.
+                // Existing chats remain in sidebar.
+                newChat();
+            }
+        );
+
+    </script>
+
+</body>
+
+</html>

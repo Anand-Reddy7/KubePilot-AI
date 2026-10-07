@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: broken-app
+  namespace: ai-agent-lab
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: broken-app
+
+  template:
+    metadata:
+      labels:
+        app: broken-app
+
+    spec:
+      containers:
+        - name: broken-app
+          image: busybox:1.36
+
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Starting application..."
+
+              if [ -z "$APP_CONFIG" ]; then
+                echo "ERROR: Required environment variable APP_CONFIG is missing"
+                exit 1
+              fi
+
+              echo "Application started successfully"
+
+              while true; do
+                sleep 30
+              done
+              
+# apiVersion: apps/v1
+# kind: Deployment
+# metadata:
+#   name: broken-app
+#   namespace: ai-agent-lab
+# spec:
+#   replicas: 1
+
+#   selector:
+#     matchLabels:
+#       app: broken-app
+
+#   template:
+#     metadata:
+#       labels:
+#         app: broken-app
+
+#     spec:
+#       containers:
+#         - name: broken-app
+#           image: busybox:1.36
+#           command:
+#             - /bin/sh
+#             - -c
+#             - |
+#               echo "Starting application..."
+#               echo "ERROR: Unable to connect to database"
+#               exit 1

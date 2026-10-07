@@ -1,0 +1,28 @@
+services:
+
+  qdrant:
+    image: qdrant/qdrant:v1.19.1
+    container_name: qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  postgres:
+    image: postgres:16
+    container_name: agent-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: agentdb
+      POSTGRES_USER: agentuser
+      POSTGRES_PASSWORD: agentpassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  qdrant_data:
+  postgres_data:
