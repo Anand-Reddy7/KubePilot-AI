@@ -1,0 +1,42 @@
+# Python environments and caches
+.venv/
+.venv-*/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Local secrets and credentials
+.env
+.env.*
+!.env.example
+!.env.*.example
+.aws/
+.kube/
+*.pem
+*.key
+
+# Local data, logs, and exports
+*.log
+*.sql
+*.dump
+qdrant_storage/
+postgres_data/
+kubernetes_runbook.txt
+
+# Editor and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
