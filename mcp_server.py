@@ -18,6 +18,134 @@ core_v1 = client.CoreV1Api()
 apps_v1 = client.AppsV1Api()
 
 
+def _list_namespace_resources(namespace, list_resources):
+    """Validate the namespace and list resources without modifying the cluster."""
+    try:
+        core_v1.read_namespace(name=namespace)
+    except ApiException as e:
+        if e.status == 404:
+            raise ValueError(
+                f"Kubernetes namespace '{namespace}' does not exist."
+            ) from e
+        raise
+
+    return list_resources(namespace=namespace).items
+
+
+@mcp.tool()
+def get_namespaces() -> list:
+    """List Kubernetes namespace names and phases. Read-only operation."""
+    return [
+        {
+            "name": namespace.metadata.name,
+            "phase": namespace.status.phase if namespace.status else None
+        }
+        for namespace in core_v1.list_namespace().items
+    ]
+
+
+@mcp.tool()
+def get_deployments(namespace: str) -> list:
+    """List deployments, replica counts, and container images in a namespace.
+
+    Read-only operation; does not return container environment variables.
+    """
+    deployments = _list_namespace_resources(
+        namespace, apps_v1.list_namespaced_deployment
+    )
+    return [
+        {
+            "name": deployment.metadata.name,
+            "namespace": deployment.metadata.namespace,
+            "replicas": deployment.spec.replicas,
+            "ready_replicas": (deployment.status.ready_replicas or 0)
+            if deployment.status else 0,
+            "available_replicas": (deployment.status.available_replicas or 0)
+            if deployment.status else 0,
+            "updated_replicas": (deployment.status.updated_replicas or 0)
+            if deployment.status else 0,
+            "containers": [
+                {"name": container.name, "image": container.image}
+                for container in deployment.spec.template.spec.containers
+            ]
+        }
+        for deployment in deployments
+    ]
+
+
+@mcp.tool()
+def get_services(namespace: str) -> list:
+    """List service names, types, addresses, selectors, and ports in a namespace.
+
+    Read-only operation.
+    """
+    services = _list_namespace_resources(
+        namespace, core_v1.list_namespaced_service
+    )
+    return [
+        {
+            "name": service.metadata.name,
+            "namespace": service.metadata.namespace,
+            "type": service.spec.type,
+            "cluster_ip": service.spec.cluster_ip,
+            "external_ips": service.spec.external_ips or [],
+            "external_name": service.spec.external_name,
+            "selector": service.spec.selector or {},
+            "ports": [
+                {
+                    "name": port.name,
+                    "port": port.port,
+                    "target_port": port.target_port,
+                    "protocol": port.protocol,
+                    "node_port": port.node_port
+                }
+                for port in service.spec.ports or []
+            ]
+        }
+        for service in services
+    ]
+
+
+@mcp.tool()
+def list_secrets(namespace: str) -> list:
+    """List secret names, types, and data key counts in a namespace.
+
+    Read-only operation. Never returns secret values or annotations.
+    """
+    secrets = _list_namespace_resources(
+        namespace, core_v1.list_namespaced_secret
+    )
+    return [
+        {
+            "name": secret.metadata.name,
+            "namespace": secret.metadata.namespace,
+            "type": secret.type,
+            "data_count": len(secret.data or {})
+        }
+        for secret in secrets
+    ]
+
+
+@mcp.tool()
+def list_config_maps(namespace: str) -> list:
+    """List ConfigMap names and text/binary key names in a namespace.
+
+    Read-only operation. Does not return configuration values or annotations.
+    """
+    config_maps = _list_namespace_resources(
+        namespace, core_v1.list_namespaced_config_map
+    )
+    return [
+        {
+            "name": config_map.metadata.name,
+            "namespace": config_map.metadata.namespace,
+            "data_keys": sorted((config_map.data or {}).keys()),
+            "binary_data_keys": sorted((config_map.binary_data or {}).keys())
+        }
+        for config_map in config_maps
+    ]
+
+
 # 3. Get Kubernetes pods
 @mcp.tool()
 def get_pods(namespace: str) -> list:

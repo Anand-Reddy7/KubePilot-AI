@@ -106,7 +106,19 @@ kubectl cluster-info
 kubectl get nodes
 ```
 
-Confirm that the selected context is the cluster you intend the agent to access. The MCP server loads your kubeconfig on startup. Your cluster credentials need permission to read namespaces, nodes, pods, pod logs, and events. Updating deployment images also requires permission to patch deployments.
+Confirm that the selected context is the cluster you intend the agent to access. The MCP server loads your kubeconfig on startup. Your cluster credentials need permission to read namespaces, nodes, pods, pod logs, and events. The additional listing tools need `list` permission on namespaces, deployments, services, secrets, and configmaps; namespaced tools also check namespace existence with `get` on namespaces. Updating deployment images also requires permission to patch deployments.
+
+Available additional read-only tools:
+
+| Tool | Input | Returned information |
+| --- | --- | --- |
+| `get_namespaces` | None | Namespace names and phases |
+| `get_deployments` | `namespace` | Names, replica counts, and container images |
+| `get_services` | `namespace` | Names, types, addresses, selectors, and ports |
+| `list_secrets` | `namespace` | Names, types, and data key counts; no secret values or annotations |
+| `list_config_maps` | `namespace` | Names and text/binary key names; no configuration values or annotations |
+
+The agent discovers MCP tools automatically at application startup. Restart Uvicorn after changing the MCP server. Secret listing fetches Secret objects from Kubernetes but returns only the fields above to the agent and its traces.
 
 You can ask about any namespace you can access. The sample `ai-agent-lab` manifests are optional troubleshooting fixtures, including intentionally broken workloads. They are not prerequisites for starting the app; do not apply the entire `k8s/` directory as a Kubernetes manifest bundle.
 
