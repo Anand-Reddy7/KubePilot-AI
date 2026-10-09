@@ -2,7 +2,7 @@
 
 A local Kubernetes troubleshooting assistant with a browser chat interface. It uses FastAPI, LangGraph, OpenAI, and an MCP server to inspect Kubernetes pods, nodes, events, and logs. Runbook search uses Qdrant; PostgreSQL stores chat metadata and LangGraph checkpoints. The agent can request approval to update a deployment's container image.
 
-The Python application runs on your host. Docker Compose runs PostgreSQL and Qdrant. Kubernetes is a separate cluster accessed through your local kubeconfig.
+The Python application and MCP server run as separate processes on your host, connected through Streamable HTTP. Docker Compose runs PostgreSQL and Qdrant. The MCP server accesses Kubernetes through its local kubeconfig.
 
 ## Prerequisites
 
@@ -10,7 +10,7 @@ The Python application runs on your host. Docker Compose runs PostgreSQL and Qdr
 - Docker Desktop or another running Docker engine, such as Colima, and Docker Compose.
 - `kubectl`, a valid kubeconfig, and access to your intended Kubernetes cluster.
 - An OpenAI API key with access to the configured `gpt-5.4` chat model and `text-embedding-3-small` embedding model. Chat and ingestion make paid API requests.
-- Available local ports: `5432` (PostgreSQL), `6333` and `6334` (Qdrant), and `8000` (application).
+- Available local ports: `5432` (PostgreSQL), `6333` and `6334` (Qdrant), `8000` (application), and `8001` (MCP server).
 
 This is a local development application, without application authentication. Keep the web server bound to `127.0.0.1`. The supplied Compose configuration publishes database ports on all host interfaces and uses development database credentials; use a trusted development machine/network. Do not expose this configuration as a public service.
 
@@ -53,7 +53,23 @@ python -c "from cryptography.exceptions import InvalidTag; from fastmcp import C
 
 For Apple Silicon, prefix subsequent `python` commands with `arch -arm64` if your terminal runs under Rosetta. Always use the same architecture for installation and execution.
 
-## 2. Set your OpenAI API key
+## 2. Export application settings
+
+Export these settings in the **application terminal**, before launching Uvicorn. Exports apply to the current shell and its child processes; they are not shared with other terminals or an already-running app.
+
+| Variable | When needed | Local value or purpose |
+| --- | --- | --- |
+| `OPENAI_API_KEY` | Required for the app and ingestion | Your OpenAI API key |
+| `MCP_SERVER_URL` | Recommended explicit setting | `http://127.0.0.1:8001/mcp` (also the code's default) |
+| `LANGSMITH_TRACING` | Optional tracing | `true` to enable; `false` to disable |
+| `LANGSMITH_API_KEY` | Required when tracing is enabled | Your LangSmith workspace's API key |
+| `LANGSMITH_ENDPOINT` | Required for APAC tracing | `https://apac.api.smith.langchain.com` |
+| `LANGSMITH_PROJECT` | Optional tracing project name | `kubepilot-local` |
+| `LANGSMITH_HIDE_INPUTS` | Optional trace content control | `false` to display inputs; `true` to hide them |
+| `LANGSMITH_HIDE_OUTPUTS` | Optional trace content control | `false` to display outputs; `true` to hide them |
+| `LANGSMITH_WORKSPACE_ID` | If required by your LangSmith key | Workspace ID, especially for organization-scoped keys |
+
+### OpenAI key and MCP connection
 
 In the terminal that will run ingestion and the application, run these commands **one at a time** in bash/zsh:
 
@@ -72,7 +88,56 @@ Verify presence without printing the secret:
 python -c 'import os; print("Key is set" if os.getenv("OPENAI_API_KEY", "").strip() else "Key is missing")'
 ```
 
-The application does **not** automatically load `.env`. Repeat this step in each new terminal session, or use your own secure environment configuration. Never commit API keys or kubeconfig credentials.
+Set the MCP endpoint:
+
+```bash
+export MCP_SERVER_URL="http://127.0.0.1:8001/mcp"
+```
+
+The application does **not** automatically load `.env`. Repeat these exports in each new terminal session, or use your own secure environment configuration. Never commit API keys or kubeconfig credentials. Database URLs and model names are currently hardcoded; exporting alternative database/model variables will not change them.
+
+### Optional: LangSmith tracing in APAC
+
+Create your key in the [APAC LangSmith UI](https://apac.smith.langchain.com/). In the application terminal, enter it using these commands **one at a time**, pasting the key after running `read`:
+
+```bash
+echo "Paste your LangSmith API key after running the next command:"
+read -r -s LANGSMITH_API_KEY
+export LANGSMITH_API_KEY
+echo
+```
+
+Then export the tracing settings:
+
+```bash
+export LANGSMITH_TRACING=true
+export LANGSMITH_ENDPOINT="https://apac.api.smith.langchain.com"
+export LANGSMITH_PROJECT="kubepilot-local"
+export LANGSMITH_HIDE_INPUTS=false
+export LANGSMITH_HIDE_OUTPUTS=false
+```
+
+These content settings let you inspect prompts, model responses, tool results, and retrieved runbooks. They can send cluster details and pod logs to LangSmith. Set both `LANGSMITH_HIDE_INPUTS` and `LANGSMITH_HIDE_OUTPUTS` to `true` to hide input/output payloads; metadata and errors may still contain information. See [LangSmith's masking guidance](https://docs.langchain.com/langsmith/mask-inputs-outputs).
+
+If your key requires a workspace ID, also export `LANGSMITH_WORKSPACE_ID` with the ID from your workspace settings. For accounts in another region, use that region's API endpoint rather than the APAC URL. See [LangSmith configuration](https://reference.langchain.com/python/langsmith).
+
+Verify settings without printing either API key:
+
+```bash
+arch -arm64 python - <<'PY'
+import os
+
+for name in (
+    "MCP_SERVER_URL", "LANGSMITH_TRACING", "LANGSMITH_ENDPOINT",
+    "LANGSMITH_PROJECT", "LANGSMITH_HIDE_INPUTS", "LANGSMITH_HIDE_OUTPUTS",
+):
+    print(f"{name}: {os.getenv(name, 'NOT SET')}")
+for name in ("OPENAI_API_KEY", "LANGSMITH_API_KEY"):
+    print(f"{name} set: {bool(os.getenv(name, '').strip())}")
+PY
+```
+
+Omit `arch -arm64` on other platforms. If you do not want tracing, run `export LANGSMITH_TRACING=false`; no LangSmith key is needed in that case.
 
 ## 3. Start PostgreSQL and Qdrant
 
@@ -118,7 +183,7 @@ Available additional read-only tools:
 | `list_secrets` | `namespace` | Names, types, and data key counts; no secret values or annotations |
 | `list_config_maps` | `namespace` | Names and text/binary key names; no configuration values or annotations |
 
-The agent discovers MCP tools automatically at application startup. Restart Uvicorn after changing the MCP server. Secret listing fetches Secret objects from Kubernetes but returns only the fields above to the agent and its traces.
+The agent discovers MCP tools automatically at application startup. After changing the MCP server, restart its process and then restart the application. Secret listing fetches Secret objects from Kubernetes but returns only the fields above to the agent and its traces.
 
 You can ask about any namespace you can access. The sample `ai-agent-lab` manifests are optional troubleshooting fixtures, including intentionally broken workloads. They are not prerequisites for starting the app; do not apply the entire `k8s/` directory as a Kubernetes manifest bundle.
 
@@ -166,9 +231,24 @@ PY
 
 On Apple Silicon under Rosetta, use `arch -arm64 python - <<'PY'` as the first line. Ingestion calls the OpenAI embeddings API. Repeating this command can add duplicate documents; it is intended for initial setup of an empty database.
 
-## 6. Start the application
+## 6. Start the MCP server — terminal 1
 
-Keep your environment active and run from the repository root:
+From the repository root in a separate terminal:
+
+```bash
+source .venv-arm64/bin/activate
+arch -arm64 python mcp_server.py
+```
+
+On other platforms, activate `.venv` and run `python mcp_server.py`.
+
+The server listens at `http://127.0.0.1:8001/mcp`. Keep this terminal running. It needs Kubernetes access, but does not need your OpenAI key, LangSmith key, PostgreSQL, or Qdrant. It loads the default kubeconfig; for a different file, export `KUBECONFIG` with that file's path **in the MCP terminal before starting it**.
+
+The `/mcp` endpoint is a protocol endpoint, not a browser UI. Keep it local: the MCP server includes a deployment-image write tool, and approval is enforced by the agent rather than the MCP server itself.
+
+## 7. Start the application — terminal 2
+
+Use the application terminal where you exported the settings in step 2. Keep your environment active and run from the repository root, after the MCP server is listening:
 
 ```bash
 python -m uvicorn main:app --host 127.0.0.1 --port 8000
@@ -186,19 +266,22 @@ Wait for `Application startup complete`, then open:
 - API documentation: <http://127.0.0.1:8000/docs>
 - Basic health endpoint: <http://127.0.0.1:8000/health>
 
-The app starts the MCP subprocess automatically. There is no separate frontend build or manual MCP startup step. Keep the activated environment on `PATH`: the app starts its MCP server with the command `python`.
+The app connects to `MCP_SERVER_URL`; it does not launch or stop the MCP server. There is no separate frontend build. Stopping the application leaves MCP running. After restarting MCP, restart the application to establish a fresh connection.
+
+For tracing, send a **new chat message**, then open `kubepilot-local` in the [APAC LangSmith UI](https://apac.smith.langchain.com/). Starting the server or opening the homepage alone does not run the agent. Expand child runs to inspect model calls and tools. Changes to trace visibility settings apply to new requests after an application restart; previously hidden content is not restored.
 
 Try a read-only request such as “List the nodes in my Kubernetes cluster,” then ask a runbook question such as “How do I troubleshoot ImagePullBackOff?” A successful `/health` response alone does not verify Kubernetes access or all tool calls.
 
 ## Restarting after initial setup
 
 1. Start Docker and your Kubernetes cluster, if it is local.
-2. Change into the repository root and activate your environment.
-3. Set `OPENAI_API_KEY` in that terminal.
-4. Run `docker compose -f k8s/docker-compose.yml up -d` (or `docker-compose`).
-5. Run the Uvicorn command above.
+2. Run `docker compose -f k8s/docker-compose.yml up -d` (or `docker-compose`) from the repository root.
+3. In terminal 1, activate your environment and start `mcp_server.py` as shown in step 6.
+4. In terminal 2, change into the repository root and activate your environment.
+5. Export `OPENAI_API_KEY` and `MCP_SERVER_URL` in terminal 2. If tracing is wanted, also export the LangSmith key, APAC endpoint, project, tracing flag, and visibility settings from step 2.
+6. Start Uvicorn in terminal 2 using the command in step 7.
 
-You do not need to reinstall dependencies or ingest runbooks on every restart. Stop Uvicorn with Ctrl+C. To stop the database containers while retaining data:
+You do not need to reinstall dependencies or ingest runbooks on every restart. Stop the application with Ctrl+C in terminal 2; stop MCP separately with Ctrl+C in terminal 1. To stop the database containers while retaining data:
 
 ```bash
 docker compose -f k8s/docker-compose.yml stop
@@ -213,7 +296,10 @@ docker compose -f k8s/docker-compose.yml stop
 | FastMCP reports missing client support | Inspect the first exception in the traceback; a failed `cryptography` import can cause this wrapper error. |
 | Qdrant collection not found | Complete the one-time ingestion step before starting the app. |
 | PostgreSQL connection refused | Confirm Docker is running, port `5432` is available, and `pg_isready` succeeds. |
-| MCP startup failure | Verify the activated Python environment, repository-root working directory, and kubeconfig. |
+| MCP server startup failure | Verify its activated Python environment, kubeconfig, and that port `8001` is available. |
+| Application cannot connect to MCP | Start `mcp_server.py` first and verify `MCP_SERVER_URL=http://127.0.0.1:8001/mcp` in the application terminal. |
+| No LangSmith traces | Check `LANGSMITH_TRACING=true`, key presence, APAC endpoint, and workspace. Restart the app, send a new chat message, then open the APAC UI and correct project. Check terminal logs for upload errors. |
+| Trace metadata visible but inputs/outputs empty | Set `LANGSMITH_HIDE_INPUTS=false` and `LANGSMITH_HIDE_OUTPUTS=false`, restart the app, and send a new message if you want payloads recorded. |
 | Kubernetes permission error | Verify the selected context and its permissions for the requested resource. |
 | `LangChainBetaWarning` | Informational warning about `langchain.mcp`; it does not prevent startup. |
 | `/favicon.ico` returns 404 | No browser tab icon is included; the app still works. |
