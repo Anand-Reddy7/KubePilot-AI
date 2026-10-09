@@ -374,4 +374,9 @@ def update_deployment_image(
 
 # 7. Start MCP server
 if __name__ == "__main__":
-    mcp.run()
+    mcp.run(
+      transport="streamable-http",
+      host="127.0.0.1",
+      port=8001,
+      streamable_http_path="/mcp",
+    )

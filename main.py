@@ -14,6 +14,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg_pool import AsyncConnectionPool
 
 from agent import create_graph
+import os
 
 
 # 1. PostgreSQL Configuration
@@ -65,12 +66,12 @@ async def lifespan(app: FastAPI):
             print("PostgreSQL checkpointer connected")
 
             # MCP connection
-            transport = StdioTransport(
-                command="python",
-                args=["mcp_server.py"]
+            mcp_url = os.environ.get(
+                "MCP_SERVER_URL",
+                "http://127.0.0.1:8001/mcp",
             )
 
-            async with Client(transport) as mcp_client:
+            async with Client(mcp_url) as mcp_client:
 
                 print("MCP client connected")
 
